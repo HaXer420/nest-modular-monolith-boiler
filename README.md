@@ -144,8 +144,8 @@ npm -v
 Clone the repository:
 
 ```bash
-git clone <your-repo-url>
-cd nest-monolith-boiler
+git clone https://github.com/HaXer420/nest-modular-monolith-boiler.git
+cd nest-modular-monolith-boiler
 ```
 
 Install dependencies:
