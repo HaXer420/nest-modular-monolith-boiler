@@ -1,0 +1,62 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  IMAGE_REPO_NAME: ${{ secrets.IMAGE_REPO_NAME }}
+  INSTANCE_ID: ${{ secrets.INSTANCE_ID }}
+  REMOTE_APP_DIR: ${{ secrets.REMOTE_APP_DIR }}
+  CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+  APP_ENV: ${{ secrets.APP_ENV }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: docker build -t "$IMAGE_REPO_NAME" .
+
+      - name: Tag Docker image
+        run: |
+          docker tag "$IMAGE_REPO_NAME:latest" "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest"
+          docker tag "$IMAGE_REPO_NAME:latest" "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:${{ github.sha }}"
+
+      - name: Push Docker image
+        run: |
+          docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest"
+          docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:${{ github.sha }}"
+
+      - name: Encode deployment assets
+        run: |
+          echo "DEPLOYMENT_SCRIPT_B64=$(base64 -w 0 deployment.sh)" >> "$GITHUB_ENV"
+          printf '%s' "$APP_ENV" | base64 -w 0 > app_env.b64
+          echo "APP_ENV_B64=$(cat app_env.b64)" >> "$GITHUB_ENV"
+
+      - name: Trigger EC2 deployment via SSM
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=$INSTANCE_ID" \
+            --comment "Deploy backend image ${{ github.sha }}" \
+            --parameters "commands=[\"mkdir -p $REMOTE_APP_DIR\",\"printf '%s' '$DEPLOYMENT_SCRIPT_B64' | base64 -d > $REMOTE_APP_DIR/deployment.sh\",\"printf '%s' '$APP_ENV_B64' | base64 -d > $REMOTE_APP_DIR/.env\",\"chmod 700 $REMOTE_APP_DIR/deployment.sh\",\"chmod 600 $REMOTE_APP_DIR/.env\",\"cd $REMOTE_APP_DIR\",\"./deployment.sh '$AWS_ACCOUNT_ID' '$AWS_REGION' '$IMAGE_REPO_NAME' '${{ github.sha }}' '${CONTAINER_NAME:-nest-boiler-backend}'\"]" \
+            --region "$AWS_REGION"
