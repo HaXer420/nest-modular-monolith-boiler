@@ -32,7 +32,7 @@ There is no CodeBuild step in this flow. The GitHub Actions workflow owns the bu
 
 The deployment is intentionally simple:
 
-1. A push to `main` starts GitHub Actions.
+1. A maintainer manually starts the GitHub Actions workflow.
 2. GitHub Actions checks out the repository.
 3. GitHub Actions authenticates to AWS.
 4. GitHub Actions builds the Docker image.
@@ -56,7 +56,7 @@ The deployment is intentionally simple:
 
 ```mermaid
 flowchart LR
-  A[Developer pushes to main] --> B[GitHub Actions starts]
+  A[Maintainer runs workflow manually] --> B[GitHub Actions starts]
   B --> C[Checkout repository]
   C --> D[Configure AWS credentials]
   D --> E[Login to Amazon ECR]
@@ -86,20 +86,24 @@ Dockerfile
 
 This is the GitHub Actions workflow.
 
-It is triggered by:
+It is triggered manually by `workflow_dispatch`.
+
+This is intentional for a public boilerplate. Fresh forks should not deploy on push.
 
 ```yaml
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm this deployment'
+        required: true
+        default: ""
 ```
 
 That means deployment runs when:
 
-- code is pushed to `main`
 - someone manually clicks **Run workflow** in GitHub Actions
+- the confirmation input is exactly `deploy`
 
 ### `deployment.sh`
 
@@ -442,6 +446,12 @@ You can run deployment manually from GitHub:
 
 ```text
 GitHub -> Actions -> Deploy Backend -> Run workflow
+```
+
+When prompted, type:
+
+```text
+deploy
 ```
 
 You can also run `deployment.sh` manually on EC2 if the image already exists in ECR.
